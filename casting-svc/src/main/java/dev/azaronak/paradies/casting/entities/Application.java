@@ -1,13 +1,11 @@
 package dev.azaronak.paradies.casting.entities;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
+import jakarta.persistence.*;
 
+import java.util.LinkedList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -16,6 +14,7 @@ public class Application extends PanacheEntityBase {
     private UUID id;
 
     @ManyToOne
+    @JsonIgnore
     private Casting casting;
 
     private String name;
@@ -27,16 +26,20 @@ public class Application extends PanacheEntityBase {
     private String email;
     private String phone;
     private String letter;
+    private AppStatus status;
 
-    @Enumerated(EnumType.STRING)
-    private AppEvaluation evaluation;
+    @OneToMany
+    @JoinColumn(name = "application_id")
+    @JsonIgnore
+    private List<Evaluation> evaluations;
 
-    public void setEval(AppEvaluation evaluation) {
-        this.evaluation = evaluation;
+    public void addEval(Evaluation evaluation) {
+        this.evaluations.add(evaluation);
     }
 
-    public AppEvaluation getEvaluation() {
-        return this.evaluation;
+    @JsonIgnore
+    public Evaluation getLastEvaluation() {
+        return this.evaluations.getLast();
     }
 
     public static Application create(
@@ -60,7 +63,8 @@ public class Application extends PanacheEntityBase {
                 otherOccupation,
                 email,
                 phone,
-                letter
+                letter,
+                new LinkedList<Evaluation>()
         );
     }
 
@@ -74,7 +78,8 @@ public class Application extends PanacheEntityBase {
             String otherOccupation,
             String email,
             String phone,
-            String letter
+            String letter,
+            List<Evaluation> evals
     ) {
         this.id = id;
         this.name = name;
@@ -86,6 +91,7 @@ public class Application extends PanacheEntityBase {
         this.email = email;
         this.phone = phone;
         this.letter = letter;
+        this.evaluations = evals;
     }
 
     // Required by Hibernate.
@@ -96,7 +102,11 @@ public class Application extends PanacheEntityBase {
         this.casting = casting;
     }
 
-    public UUID getId() {
-        return this.id;
-    }
+    public UUID getId() { return this.id; }
+    public String getName() { return this.name; }
+    public String getOccupation() { return this.occupation; }
+    public int getAge() { return this.age; }
+    public String getUniversity() { return this.university; }
+    public String getMajor() { return this.major; }
+    public AppStatus getStatus() { return this.status; }
 }
