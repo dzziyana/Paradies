@@ -1,0 +1,13 @@
+# IDE
+.idea/
+.vscode/
+*.ipr
+*.iml
+*.iws
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Nix
+result
