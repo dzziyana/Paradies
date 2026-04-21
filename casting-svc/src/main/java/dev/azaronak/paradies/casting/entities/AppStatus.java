@@ -6,5 +6,6 @@ public enum AppStatus {
     WITHDRAWN,
     EVALUATED_YES,
     EVALUATED_NO,
+    REJECTED_AFTER_CASTING,
     MOVED_IN
 }

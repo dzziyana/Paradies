@@ -28,4 +28,14 @@ public class Evaluation extends PanacheEntityBase {
     //for hibernate purposes:
     public Evaluation() {
     }
+
+    public void update(EvaluationCategory newJudgement) {
+        this.judgement = newJudgement;
+        this.time = LocalDateTime.now();
+    }
+
+    public UUID getId() { return id; }
+    public UUID getAuthorId() { return authorId; }
+    public EvaluationCategory getJudgement() { return judgement; }
+    public LocalDateTime getTime() { return time; }
 }

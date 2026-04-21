@@ -1,660 +1,446 @@
-import { useState } from "react"
-import { useParams, useNavigate } from "react-router-dom"
-import {
-  ArrowLeft,
-  ArrowRight,
-  CheckCircle,
-  XCircle,
-  GraduationCap,
-  Buildings,
-  User,
-  Envelope,
-  Phone,
-  PencilLine,
-  ArrowSquareOut,
-  Sparkle,
-} from "@phosphor-icons/react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import {
-  Field,
-  FieldGroup,
-  FieldLabel,
-  FieldDescription,
-  FieldError,
-} from "@/components/ui/field"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { submitApplication } from "@/api"
-import Logo from "@/components/Logo"
+import { useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { ArrowDown, ArrowLeft, ArrowRight } from "lucide-react";
+import { getCasting, formatDate, type CastingPublicView } from "@/lib/api";
 
-// ── Eligibility ────────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
-const ELIGIBLE_UNIVERSITIES = [
-  { value: "UZH",  label: "University of Zurich (UZH)" },
-  { value: "ETH",  label: "ETH Zurich" },
-  { value: "ZHDK", label: "Zurich University of the Arts (ZHdK)" },
-  { value: "PHZH", label: "Zurich University of Teacher Education (PHZH)" },
-  { value: "HFH",  label: "Hochschule für Heilpädagogik Zurich (HfH)" },
-  { value: "ZHAW", label: "ZHAW Zurich Campus (Applied Psychology / Social Work / Engineering)" },
-  { value: "KME",  label: "Kantonale Maturitätsschule für Erwachsene (KME)" },
-]
+const WOKO_UNIVERSITIES = [
+  "ETH Zürich",
+  "Universität Zürich (UZH)",
+  "ZHdK",
+  "PHZH",
+  "HfH",
+  "ZHAW",
+  "KME",
+];
 
-const DEGREE_LEVELS = [
-  { value: "bachelor", label: "Bachelor", note: "Max. 8-year rental period" },
-  { value: "master",   label: "Master",   note: "Max. 8-year rental period" },
-  { value: "doctoral", label: "Doctoral / PhD", note: "Max. 2-year rental period" },
-]
+const DEGREE_OPTIONS = [
+  { value: "Bachelor", note: "max. 8 years contract" },
+  { value: "Master",   note: "max. 8 years contract" },
+  { value: "Doctoral", note: "max. 2 years contract" },
+];
 
-type EligibilityAnswers = {
-  enrolled: boolean | null
-  university: string | null
-  degree: string | null
-}
+type Step = "loading" | "closed" | "welcome" | "q1" | "q2" | "q3" | "ineligible" | "eligible" | "room";
 
-type EligibilityStep = "enrolled" | "university" | "degree" | "result"
+// ─── Shared UI atoms ──────────────────────────────────────────────────────────
 
-const STEPS: EligibilityStep[] = ["enrolled", "university", "degree", "result"]
-const PROGRESS_LABELS = ["Enrollment", "University", "Degree"]
-
-function isEligible(answers: EligibilityAnswers) {
+function ProgressBar({ step }: { step: "q1" | "q2" | "q3" }) {
+  const steps = [
+    { id: "q1", label: "Enrollment" },
+    { id: "q2", label: "University" },
+    { id: "q3", label: "Degree" },
+  ];
+  const current = steps.findIndex((s) => s.id === step);
   return (
-    answers.enrolled === true &&
-    answers.university !== null &&
-    answers.university !== "other" &&
-    answers.degree !== null
-  )
+    <div className="flex items-center justify-center gap-3 font-label text-[10px] uppercase tracking-[0.12em] text-on-surface-variant mb-8">
+      {steps.map((s, i) => (
+        <span key={s.id} className="flex items-center gap-3">
+          <span className={i <= current ? "text-primary font-bold" : "opacity-40"}>
+            {String(i + 1).padStart(2, "0")} {s.label}
+          </span>
+          {i < steps.length - 1 && <span className="opacity-30">→</span>}
+        </span>
+      ))}
+    </div>
+  );
 }
-
-// ── Option button ──────────────────────────────────────────────────────────────
 
 function OptionButton({
-  icon,
-  label,
-  description,
-  selected,
   onClick,
+  children,
 }: {
-  icon?: React.ReactNode
-  label: string
-  description?: string
-  selected?: boolean
-  onClick: () => void
+  onClick: () => void;
+  children: React.ReactNode;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={[
-        "group flex w-full items-start gap-3 rounded-lg border px-4 py-3.5 text-left transition-all outline-none",
-        "focus-visible:ring-3 focus-visible:ring-ring/50",
-        selected
-          ? "border-primary bg-primary/5 ring-1 ring-primary/30"
-          : "border-border bg-background hover:border-primary/40 hover:bg-muted/40",
-      ].join(" ")}
+      className="w-full text-left px-6 py-5 rounded-2xl bg-surface-container outline outline-1 outline-outline-variant/30 hover:outline-primary hover:bg-primary/5 font-body text-lg font-semibold transition-all active:scale-[0.99]"
     >
-      {icon && (
-        <span className={[
-          "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md transition-colors",
-          selected
-            ? "bg-primary text-primary-foreground"
-            : "bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary",
-        ].join(" ")}>
-          {icon}
-        </span>
-      )}
-      <div className="flex flex-col gap-0.5">
-        <span className={["text-sm font-medium leading-snug", selected ? "text-primary" : "text-foreground"].join(" ")}>
-          {label}
-        </span>
-        {description && (
-          <span className="text-xs leading-snug text-muted-foreground">{description}</span>
-        )}
-      </div>
-      {selected && <CheckCircle className="ml-auto mt-0.5 size-4 shrink-0 text-primary" weight="fill" />}
+      {children}
     </button>
-  )
+  );
 }
 
-// ── Eligibility questionnaire ──────────────────────────────────────────────────
-
-function EligibilityQuestionnaire({ onPass }: { onPass: (answers: EligibilityAnswers) => void }) {
-  const [step, setStep] = useState<EligibilityStep>("enrolled")
-  const [answers, setAnswers] = useState<EligibilityAnswers>({
-    enrolled: null,
-    university: null,
-    degree: null,
-  })
-
-  const stepIndex = STEPS.indexOf(step)
-  const eligible = isEligible(answers)
-
-  function answer(key: keyof EligibilityAnswers, value: boolean | string | null) {
-    const next = { ...answers, [key]: value }
-    setAnswers(next)
-
-    if (key === "enrolled" && value === false) { setStep("result"); return }
-    if (key === "enrolled")  { setStep("university"); return }
-    if (key === "university") { setStep("degree"); return }
-    if (key === "degree")    { setStep("result"); return }
-  }
-
-  function back() {
-    const prev: Record<EligibilityStep, EligibilityStep> = {
-      university: "enrolled",
-      degree:     "university",
-      result:     "degree",
-      enrolled:   "enrolled",
-    }
-    setStep(prev[step])
-  }
-
-  return (
-    <div className="flex flex-col gap-6">
-      {/* Progress — only shown during active steps, not on result */}
-      {step !== "result" && (
-        <div className="flex items-center gap-2">
-          {PROGRESS_LABELS.map((label, i) => (
-            <div key={label} className="flex items-center gap-2">
-              <div className={[
-                "flex size-6 items-center justify-center rounded-full text-xs font-semibold transition-colors",
-                i < stepIndex
-                  ? "bg-primary text-primary-foreground"
-                  : i === stepIndex
-                  ? "bg-primary/15 text-primary ring-1 ring-primary/40"
-                  : "bg-muted text-muted-foreground",
-              ].join(" ")}>
-                {i < stepIndex
-                  ? <CheckCircle className="size-3.5" weight="fill" />
-                  : i + 1}
-              </div>
-              <span className={[
-                "hidden text-xs sm:block",
-                i === stepIndex ? "font-medium text-foreground" : "text-muted-foreground",
-              ].join(" ")}>
-                {label}
-              </span>
-              {i < PROGRESS_LABELS.length - 1 && (
-                <div className="mx-1 h-px w-6 bg-border" />
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Step: Enrolled */}
-      {step === "enrolled" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <GraduationCap className="size-5 text-primary" />
-              Are you currently enrolled?
-            </CardTitle>
-            <CardDescription>
-              WOKO housing is exclusively for full-time students. Part-time students and non-students are not eligible.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2">
-            <OptionButton
-              label="Yes, I am an immatriculated student"
-              description="Bachelor, Master, or Doctoral programme"
-              selected={answers.enrolled === true}
-              onClick={() => answer("enrolled", true)}
-            />
-            <OptionButton
-              label="No, I am not currently enrolled"
-              selected={answers.enrolled === false}
-              onClick={() => answer("enrolled", false)}
-            />
-
-            <OptionButton
-                label="No, I am not currently enrolled but I know for sure I will be at contract start"
-                selected={answers.enrolled === false}
-                onClick={() => answer("enrolled", true)}
-            />
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Step: University */}
-      {step === "university" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Buildings className="size-5 text-primary" />
-              Which university are you at?
-            </CardTitle>
-            <CardDescription>
-              WOKO cooperates with a specific set of Zurich universities. Only students from these institutions are eligible.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2">
-            {ELIGIBLE_UNIVERSITIES.map((uni) => (
-              <OptionButton
-                key={uni.value}
-                label={uni.label}
-                selected={answers.university === uni.value}
-                onClick={() => answer("university", uni.value)}
-              />
-            ))}
-            <OptionButton
-              label="Other / Not listed"
-              description="Students at other institutions are usually not eligible"
-              selected={answers.university === "other"}
-              onClick={() => answer("university", "other")}
-            />
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Step: Degree */}
-      {step === "degree" && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <GraduationCap className="size-5 text-primary" />
-              What level of study?
-            </CardTitle>
-            <CardDescription>
-              Maximum rental periods differ by degree: 8 years for Bachelor/Master, 2 years for Doctoral students.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2">
-            {DEGREE_LEVELS.map((deg) => (
-              <OptionButton
-                key={deg.value}
-                label={deg.label}
-                description={deg.note}
-                selected={answers.degree === deg.value}
-                onClick={() => answer("degree", deg.value)}
-              />
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Result: not eligible */}
-      {step === "result" && !eligible && (
-        <Card className="border-destructive/30">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-destructive">
-              <XCircle className="size-5" weight="fill" />
-              Not eligible to apply
-            </CardTitle>
-            <CardDescription>
-              {answers.enrolled === false
-                ? "WOKO housing is reserved exclusively for full-time students enrolled at eligible Zurich universities."
-                : "Your university is not part of the WOKO cooperation network. Only students at UZH, ETH, ZHdK, PHZH, HfH, ZHAW, or KME are eligible."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            <p className="text-sm text-muted-foreground">
-              For more information about eligibility requirements, visit the WOKO website.
-            </p>
-            <Button variant="outline" size="sm" asChild>
-              <a href="https://www.woko.ch/en/our-service/who-is-eligible-to-rent" target="_blank" rel="noopener noreferrer">
-                WOKO eligibility criteria <ArrowSquareOut className="size-3.5" />
-              </a>
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Result: eligible ✓ */}
-      {step === "result" && eligible && (
-        <div className="flex flex-col gap-5">
-          <div className="relative overflow-hidden rounded-xl border border-primary/20 bg-primary/5 px-6 py-8 text-center">
-            {/* decorative rings */}
-            <div className="pointer-events-none absolute -top-10 -right-10 size-40 rounded-full bg-primary/10 blur-2xl" />
-            <div className="pointer-events-none absolute -bottom-8 -left-8 size-32 rounded-full bg-primary/10 blur-2xl" />
-
-            <div className="relative flex flex-col items-center gap-4">
-              <div className="flex size-14 items-center justify-center rounded-full bg-primary/15 ring-4 ring-primary/10">
-                <Sparkle className="size-7 text-primary" weight="fill" />
-              </div>
-
-              <div>
-                <h2 className="text-xl font-semibold tracking-tight text-foreground">
-                  You're eligible!
-                </h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Great news — you meet the criteria for Paradies. Here's what you confirmed:
-                </p>
-              </div>
-
-              <ul className="w-full max-w-xs space-y-2 text-left">
-                <li className="flex items-center gap-2.5 rounded-lg border border-border bg-background px-3 py-2.5 text-sm">
-                  <CheckCircle className="size-4 shrink-0 text-primary" weight="fill" />
-                  <span className="text-muted-foreground">Full-time student</span>
-                </li>
-                <li className="flex items-center gap-2.5 rounded-lg border border-border bg-background px-3 py-2.5 text-sm">
-                  <CheckCircle className="size-4 shrink-0 text-primary" weight="fill" />
-                  <span className="text-muted-foreground">
-                    {ELIGIBLE_UNIVERSITIES.find((u) => u.value === answers.university)?.label}
-                  </span>
-                </li>
-                <li className="flex items-center gap-2.5 rounded-lg border border-border bg-background px-3 py-2.5 text-sm">
-                  <CheckCircle className="size-4 shrink-0 text-primary" weight="fill" />
-                  <span className="text-muted-foreground">
-                    {DEGREE_LEVELS.find((d) => d.value === answers.degree)?.label} ·{" "}
-                    <span className="text-xs">{DEGREE_LEVELS.find((d) => d.value === answers.degree)?.note}</span>
-                  </span>
-                </li>
-              </ul>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <Button variant="ghost" size="sm" onClick={back}>
-              <ArrowLeft className="size-4" /> Review answers
-            </Button>
-            <Button onClick={() => onPass(answers)}>
-              Start application <ArrowRight className="size-4" />
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Back nav for non-result steps */}
-      {step !== "result" && (
-        <div className="flex">
-          {stepIndex > 0 && (
-            <Button variant="ghost" size="sm" onClick={back}>
-              <ArrowLeft className="size-4" /> Back
-            </Button>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Application form ───────────────────────────────────────────────────────────
-
-const OCCUPATIONS = ["Student", "Employed", "Self-employed", "Other"]
-
-const PRONOUN_SUGGESTIONS = ["she/her", "he/him", "they/them", "she/they", "he/they", "other"]
-
-type FormState = {
-  name: string
-  pronouns: string
-  occupation: string
-  age: string
-  university: string
-  major: string
-  otherOccupation: string
-  email: string
-  phone: string
-  letter: string
-}
-
-type FormErrors = Partial<Record<keyof FormState, string>>
-
-function validate(form: FormState): FormErrors {
-  const errors: FormErrors = {}
-  if (!form.name.trim()) errors.name = "Name is required."
-  if (!form.age || isNaN(Number(form.age)) || Number(form.age) < 16 || Number(form.age) > 99)
-    errors.age = "Enter a valid age between 16 and 99."
-  if (!form.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))
-    errors.email = "Enter a valid email address."
-  if (!form.letter.trim() || form.letter.trim().length < 50)
-    errors.letter = "Please write at least 50 characters."
-  return errors
-}
-
-function ApplicationForm({
-  castingId,
-  eligibilityAnswers,
-}: {
-  castingId: string
-  eligibilityAnswers: EligibilityAnswers
-}) {
-  const navigate = useNavigate()
-  const uniLabel    = ELIGIBLE_UNIVERSITIES.find((u) => u.value === eligibilityAnswers.university)?.label ?? ""
-  const degreeLabel = DEGREE_LEVELS.find((d) => d.value === eligibilityAnswers.degree)?.label ?? ""
-
-  const [form, setForm] = useState<FormState>({
-    name:             "",
-    pronouns:         "",
-    occupation:       "Student",
-    age:              "",
-    university:       uniLabel,
-    major:            "",
-    otherOccupation:  "",
-    email:            "",
-    phone:            "",
-    letter:           "",
-  })
-  const [errors,      setErrors]      = useState<FormErrors>({})
-  const [submitting,  setSubmitting]  = useState(false)
-  const [submitError, setSubmitError] = useState<string | null>(null)
-
-  function set(field: keyof FormState) {
-    return (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      setForm((f) => ({ ...f, [field]: e.target.value }))
-      if (errors[field]) setErrors((err) => ({ ...err, [field]: undefined }))
-    }
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    const errs = validate(form)
-    if (Object.keys(errs).length) { setErrors(errs); return }
-    setSubmitting(true)
-    setSubmitError(null)
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { pronouns, ...rest } = form
-      const applicationId = await submitApplication(castingId, {
-        ...rest,
-        age: Number(form.age),
-      })
-      navigate(`/apply/${castingId}/success/${applicationId}`)
-    } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "Unknown error")
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-5" noValidate>
-
-      {/* Eligibility summary */}
-      <div className="flex flex-wrap gap-2">
-        <Badge variant="secondary" className="gap-1.5">
-          <GraduationCap className="size-3.5" /> {uniLabel}
-        </Badge>
-        <Badge variant="secondary" className="gap-1.5">
-          {degreeLabel}
-        </Badge>
-      </div>
-
-      {/* Personal details */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-sm font-medium uppercase tracking-wider text-muted-foreground">
-            <User className="size-4 text-primary" /> Personal details
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <FieldGroup>
-            <div className="grid grid-cols-2 gap-4 max-sm:grid-cols-1">
-              <Field data-invalid={!!errors.name}>
-                <FieldLabel htmlFor="name">Full name</FieldLabel>
-                <Input id="name" value={form.name} onChange={set("name")} placeholder="Your full name" aria-invalid={!!errors.name} />
-                <FieldError>{errors.name}</FieldError>
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="pronouns">Pronouns</FieldLabel>
-                <FieldDescription>Optional</FieldDescription>
-                <Input
-                  id="pronouns"
-                  value={form.pronouns}
-                  onChange={set("pronouns")}
-                  placeholder="e.g. she/her"
-                  list="pronoun-suggestions"
-                />
-                <datalist id="pronoun-suggestions">
-                  {PRONOUN_SUGGESTIONS.map((p) => <option key={p} value={p} />)}
-                </datalist>
-              </Field>
-            </div>
-            <Field data-invalid={!!errors.age}>
-              <FieldLabel htmlFor="age">Age</FieldLabel>
-              <Input id="age" type="number" min={16} max={99} value={form.age} onChange={set("age")} placeholder="e.g. 24" className="max-w-32" aria-invalid={!!errors.age} />
-              <FieldError>{errors.age}</FieldError>
-            </Field>
-            <div className="grid grid-cols-2 gap-4 max-sm:grid-cols-1">
-              <Field data-invalid={!!errors.email}>
-                <FieldLabel htmlFor="email">
-                  <Envelope className="size-3.5 text-muted-foreground" /> Email
-                </FieldLabel>
-                <Input id="email" type="email" value={form.email} onChange={set("email")} placeholder="you@example.com" aria-invalid={!!errors.email} />
-                <FieldError>{errors.email}</FieldError>
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="phone">
-                  <Phone className="size-3.5 text-muted-foreground" /> Phone
-                </FieldLabel>
-                <Input id="phone" type="tel" value={form.phone} onChange={set("phone")} placeholder="+41 79 000 00 00" />
-              </Field>
-            </div>
-          </FieldGroup>
-        </CardContent>
-      </Card>
-
-      {/* Occupation */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-sm font-medium uppercase tracking-wider text-muted-foreground">
-            <Buildings className="size-4 text-primary" /> Occupation
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="occupation">What best describes your situation?</FieldLabel>
-              <Select value={form.occupation} onValueChange={(v) => setForm((f) => ({ ...f, occupation: v }))}>
-                <SelectTrigger id="occupation" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {OCCUPATIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </Field>
-            {form.occupation === "Student" && (
-              <Field>
-                <FieldLabel htmlFor="major">Field of study</FieldLabel>
-                <FieldDescription>Your major or study programme</FieldDescription>
-                <Input id="major" value={form.major} onChange={set("major")} placeholder="e.g. Computer Science" />
-              </Field>
-            )}
-            {form.occupation === "Other" && (
-              <Field>
-                <FieldLabel htmlFor="otherOccupation">Describe your occupation</FieldLabel>
-                <Input id="otherOccupation" value={form.otherOccupation} onChange={set("otherOccupation")} placeholder="What do you do?" />
-              </Field>
-            )}
-          </FieldGroup>
-        </CardContent>
-      </Card>
-
-      {/* Motivation letter */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-sm font-medium uppercase tracking-wider text-muted-foreground">
-            <PencilLine className="size-4 text-primary" /> Motivation letter
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Field data-invalid={!!errors.letter}>
-            <FieldLabel htmlFor="letter">Why do you want to live with us at Paradies
-              ?</FieldLabel>
-            <FieldDescription>
-              Tell us about yourself and why Paradies is the right fit for you. Minimum 50 characters.
-            </FieldDescription>
-            <Textarea
-              id="letter"
-              value={form.letter}
-              onChange={set("letter")}
-              placeholder="Dear WG…"
-              rows={8}
-              className="mt-1"
-              aria-invalid={!!errors.letter}
-            />
-            <div className="flex items-center justify-between">
-              <FieldError>{errors.letter}</FieldError>
-              <span className={[
-                "ml-auto text-xs tabular-nums",
-                form.letter.length < 50 ? "text-muted-foreground" : "text-primary",
-              ].join(" ")}>
-                {form.letter.length} / 50+
-              </span>
-            </div>
-          </Field>
-        </CardContent>
-      </Card>
-
-      {submitError && (
-        <Card className="border-destructive/30 bg-destructive/5">
-          <CardContent className="flex items-center gap-2 py-3 text-sm text-destructive">
-            <XCircle className="size-4 shrink-0" weight="fill" />
-            Failed to submit: {submitError}
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="flex justify-end">
-        <Button type="submit" disabled={submitting} size="lg">
-          {submitting ? "Submitting…" : "Submit application"}
-          {!submitting && <ArrowRight className="size-4" />}
-        </Button>
-      </div>
-    </form>
-  )
-}
-
-// ── Page ───────────────────────────────────────────────────────────────────────
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ApplyPage() {
-  const { castingId } = useParams<{ castingId: string }>()
-  const [eligibilityAnswers, setEligibilityAnswers] = useState<EligibilityAnswers | null>(null)
+  const { castingId } = useParams<{ castingId: string }>();
+  const navigate = useNavigate();
 
-  return (
-    <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
-        <div className="mx-auto flex h-12 max-w-2xl items-center px-4">
-          <Logo />
+  const [casting, setCasting] = useState<CastingPublicView | null>(null);
+  const [step, setStep] = useState<Step>("loading");
+  const [selectedUniversity, setSelectedUniversity] = useState("");
+  const [selectedDegree, setSelectedDegree] = useState("");
+  const [letsGoVisible, setLetsGoVisible] = useState(false);
+  const letsGoRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const el = letsGoRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setLetsGoVisible(entry.isIntersecting),
+      { threshold: 0.5 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [step]);
+
+  useEffect(() => {
+    if (!castingId) return;
+    getCasting(castingId)
+      .then((c) => {
+        setCasting(c);
+        setStep(c.applicationPeriodActive ? (c.sublet ? "eligible" : "welcome") : "closed");
+      })
+      .catch(() => setStep("closed"));
+  }, [castingId]);
+
+  function goToForm() {
+    navigate(`/apply/${castingId}/form`, {
+      state: { university: selectedUniversity, degree: selectedDegree },
+    });
+  }
+
+  const shell = (children: React.ReactNode, wide = false) => (
+    <div className="min-h-screen bg-surface">
+      {casting && (
+        <div className="bg-white border-b border-outline-variant/15 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+          <div className={`${wide ? "max-w-7xl" : "max-w-2xl"} mx-auto px-6 py-6`}>
+            <p className="font-label text-[10px] uppercase tracking-[0.15em] text-primary font-semibold mb-2">
+              KIRCHGASSE 36 / KLEINES PARADIES
+            </p>
+            <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 font-body text-base text-on-surface">
+              <span>
+                Room vacancy · Move-in <span className="font-semibold">{formatDate(casting.moveInDate)}</span>
+              </span>
+              {casting.sublet && (
+                <span className="text-on-surface-variant">(sublet)</span>
+              )}
+              {casting.applicationUntil && (
+                <span className="text-on-surface-variant text-sm">
+                  Apply by <span className="font-semibold text-on-surface">{formatDate(casting.applicationUntil)}</span>
+                </span>
+              )}
+            </div>
+          </div>
         </div>
-      </header>
+      )}
+      <div key={step} className={`${wide ? "max-w-7xl" : "max-w-2xl"} mx-auto px-6 py-12 animate-in`}>
+        {children}
+      </div>
+    </div>
+  );
 
-      <main className="mx-auto max-w-2xl px-4 py-8">
-        <div className="mb-6">
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {eligibilityAnswers ? "Your application" : "Check eligibility"}
+  // ─── Loading ───────────────────────────────────────────────────────────────
+
+  if (step === "loading") {
+    return (
+      <div className="min-h-screen bg-surface flex items-center justify-center">
+        <p className="font-body text-sm text-on-surface-variant opacity-60">Loading…</p>
+      </div>
+    );
+  }
+
+  // ─── Closed ────────────────────────────────────────────────────────────────
+
+  if (step === "closed") {
+    return (
+      <div className="min-h-screen bg-surface flex items-center justify-center p-6">
+        <div className="w-full max-w-lg text-center flex flex-col gap-4">
+          <span className="text-4xl select-none">︵‿︵</span>
+          <h1 className="font-headline text-4xl font-bold italic">Applications closed</h1>
+          <p className="font-body text-sm text-on-surface-variant">
+            This casting is no longer accepting applications.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Welcome ───────────────────────────────────────────────────────────────
+
+  if (step === "welcome") return (
+    <>
+    {shell(
+    <div className="flex flex-col gap-10">
+      <div>
+        <p className="font-label text-[10px] uppercase tracking-[0.15em] text-primary font-semibold mb-3">
+          ✦ Room casting
+        </p>
+        <h1 className="font-headline text-4xl lg:text-5xl font-bold italic leading-[1.05] mb-4">
+          Welcome to<br />Kleines Paradies
+        </h1>
+        <p className="font-body text-l text-on-surface-variant leading-relaxed max-w-lg">
+          Lorem ipsum dolor sit we're a student WG in Zürich looking for a new flatmate. Here's how our casting works:
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-4">
+        {[
+          { num: "01", title: "Eligibility check", desc: "A few quick questions to confirm you're eligible for WOKO housing." },
+          { num: "02", title: "Your application", desc: "Tell us about yourself, who you are, what you study, and why you'd like to live here." },
+          { num: "03", title: "We review", desc: "Our WG reads every application. If we think it's a good fit, we'll invite you to meet us in person." },
+          { num: "04", title: "The casting", desc: "You visit the flat, meet the WG, and we all get to know each other." },
+        ].map((item) => (
+          <div
+            key={item.num}
+            className="flex gap-5 items-start rounded-2xl bg-surface-container p-5 outline outline-1 outline-outline-variant/20"
+          >
+            <span className="font-label text-[10px] uppercase tracking-[0.15em] text-primary font-bold mt-0.5 shrink-0">
+              {item.num}
+            </span>
+            <div>
+              <p className="font-body text-base font-semibold text-on-surface">{item.title}</p>
+              <p className="font-body text-sm text-on-surface-variant mt-0.5">{item.desc}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-2xl bg-skin/40 px-5 py-4 flex gap-3 items-start">
+        <span className="text-on-surface-variant/50 mt-0.5 shrink-0 text-sm">ℹ</span>
+        <p className="font-body text-sm text-on-surface-variant leading-relaxed">
+          The room shown in this listing may (with a small probability) change before move-in. Rooms at Kirchgasse 36 range from <span className="font-semibold text-on-surface">CHF 400 – 500 / month</span> depending on size and floor. You'll be informed of the final assignment before signing.
+        </p>
+      </div>
+
+      <button
+        ref={letsGoRef}
+        onClick={() => setStep("q1")}
+        className="flex items-center justify-between w-full px-6 py-5 bg-primary text-on-primary rounded-full font-label text-sm font-bold tracking-widest active:scale-[0.98] transition-transform"
+      >
+        LET'S GO <ArrowRight size={16} />
+      </button>
+    </div>
+    )}
+    <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 pointer-events-none z-10 animate-bounce transition-opacity duration-300 ${letsGoVisible ? "opacity-0" : "opacity-100"}`}>
+      <div className="flex items-center gap-2 px-5 py-3 rounded-full glass shadow-lg">
+        <ArrowDown size={22} className="text-primary" strokeWidth={2.5} />
+        <span className="font-label text-[11px] font-bold uppercase tracking-[0.15em] text-primary">Scroll</span>
+      </div>
+    </div>
+    </>
+  );
+
+  // ─── Q1: Enrollment ────────────────────────────────────────────────────────
+
+  if (step === "q1") return shell(
+    <>
+      <ProgressBar step="q1" />
+      <button
+        onClick={() => setStep("welcome")}
+        className="flex items-center gap-1 text-on-surface-variant font-label text-[10px] uppercase tracking-[0.15em] font-semibold mb-6 hover:text-primary transition-colors"
+      >
+        <ArrowLeft size={15} /> Back
+      </button>
+      <h1 className="font-headline text-4xl font-bold italic leading-[1.05] mb-3">
+        Are you enrolled at a Zurich-based university?
+      </h1>
+      <p className="font-body text-on-surface-variant mb-9">
+        WOKO housing is reserved for students at partner universities in Zürich.
+      </p>
+      <div className="flex flex-col gap-4">
+        <OptionButton onClick={() => setStep("q2")}>
+          Yes, I am currently enrolled
+        </OptionButton>
+        <OptionButton onClick={() => setStep("q2")}>
+          Not yet, but I will be enrolled at contract start
+        </OptionButton>
+        <OptionButton onClick={() => setStep("ineligible")}>
+          No
+        </OptionButton>
+      </div>
+    </>
+  );
+
+  // ─── Q2: University ────────────────────────────────────────────────────────
+
+  if (step === "q2") return shell(
+    <>
+      <ProgressBar step="q2" />
+      <button
+        onClick={() => setStep("q1")}
+        className="flex items-center gap-1 text-on-surface-variant font-label text-[10px] uppercase tracking-[0.15em] font-semibold mb-6 hover:text-primary transition-colors"
+      >
+        <ArrowLeft size={15} /> Back
+      </button>
+      <h1 className="font-headline text-4xl font-bold italic leading-[1.05] mb-8">
+        Which university?
+      </h1>
+      <div className="flex flex-col gap-3">
+        {WOKO_UNIVERSITIES.map((uni) => (
+          <OptionButton
+            key={uni}
+            onClick={() => { setSelectedUniversity(uni); setStep("q3"); }}
+          >
+            {uni}
+          </OptionButton>
+        ))}
+        <OptionButton onClick={() => setStep("ineligible")}>
+          Other
+        </OptionButton>
+      </div>
+    </>
+  );
+
+  // ─── Q3: Degree ────────────────────────────────────────────────────────────
+
+  if (step === "q3") return shell(
+    <>
+      <ProgressBar step="q3" />
+      <button
+        onClick={() => setStep("q2")}
+        className="flex items-center gap-1 text-on-surface-variant font-label text-[10px] uppercase tracking-[0.15em] font-semibold mb-6 hover:text-primary transition-colors"
+      >
+        <ArrowLeft size={15} /> Back
+      </button>
+      <h1 className="font-headline text-4xl font-bold italic leading-[1.05] mb-8">
+        What are you studying?
+      </h1>
+      <div className="flex flex-col gap-3">
+        {DEGREE_OPTIONS.map(({ value, note }) => (
+          <OptionButton
+            key={value}
+            onClick={() => { setSelectedDegree(value); setStep("eligible"); }}
+          >
+            <span>{value}</span>
+            <span className="font-normal text-on-surface-variant ml-2 text-xs">· {note}</span>
+          </OptionButton>
+        ))}
+      </div>
+    </>
+  );
+
+  // ─── Not eligible ──────────────────────────────────────────────────────────
+
+  if (step === "ineligible") return shell(
+    <div className="text-center flex flex-col items-center gap-6 py-8">
+      <span className="text-5xl select-none">︵‿︵</span>
+      <div>
+        <h1 className="font-headline text-4xl font-bold italic mb-3">
+          Unfortunately not eligible
+        </h1>
+        <p className="font-body text-on-surface-variant leading-relaxed max-w-sm mx-auto">
+          WOKO housing is available to students at partner universities in Zürich.
+          Check the full eligibility criteria on the WOKO website.
+        </p>
+      </div>
+      <button
+        onClick={() => setStep("welcome")}
+        className="flex items-center gap-2 text-primary font-label text-xs font-bold uppercase tracking-widest hover:underline"
+      >
+        <ArrowLeft size={15} /> Start over
+      </button>
+    </div>
+  );
+
+  // ─── Eligible confirmation ─────────────────────────────────────────────────
+
+  if (step === "eligible") {
+    const isSublet = casting?.sublet;
+    return shell(
+      <div className="flex flex-col gap-8">
+        <div className="rounded-3xl bg-gradient-to-br from-primary-container to-primary p-8 text-on-primary relative overflow-hidden">
+          <span className="absolute top-5 right-6 text-primary-fixed/40 text-2xl select-none">✦</span>
+          <p className="font-label text-[10px] uppercase tracking-[0.15em] font-semibold opacity-80 mb-2">
+            {isSublet ? "✦ Sublet opening" : "✦ You're eligible"}
+          </p>
+          <h2 className="font-headline text-3xl font-bold italic mb-4 leading-tight">
+            {isSublet ? "Apply for this sublet!" : "Great, you can apply!"}
+          </h2>
+          {!isSublet && (
+            <div className="flex flex-wrap gap-x-6 gap-y-1 font-body text-sm opacity-90">
+              <span>{selectedUniversity}</span>
+              <span>{selectedDegree}</span>
+            </div>
+          )}
+          {isSublet && casting && (
+            <p className="font-body text-sm opacity-80">
+              Move-in {formatDate(casting.moveInDate)}
+              {casting.moveOutDate && ` · Move-out ${formatDate(casting.moveOutDate)}`}
+            </p>
+          )}
+        </div>
+
+        <button
+          onClick={() => casting?.room ? setStep("room") : goToForm()}
+          className="flex items-center justify-between w-full px-6 py-5 bg-primary text-on-primary rounded-full font-label text-sm font-bold tracking-widest active:scale-[0.98] transition-transform"
+        >
+          {casting?.room ? "SEE THE ROOM" : "START APPLICATION"} <ArrowRight size={16} />
+        </button>
+
+        {!isSublet && (
+          <button
+            onClick={() => setStep("q1")}
+            className="text-center text-on-surface-variant font-label text-xs uppercase tracking-[0.15em] font-semibold hover:text-primary transition-colors"
+          >
+            <ArrowLeft size={15} className="inline mr-1" />
+            Back to questions
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // ─── Room description ──────────────────────────────────────────────────────
+
+  if (step === "room" && casting?.room) {
+    const room = casting.room;
+    return shell(
+      <div className="flex flex-col gap-8">
+        <button
+          type="button"
+          onClick={() => setStep("eligible")}
+          className="flex items-center gap-1 text-on-surface-variant font-label text-[10px] uppercase tracking-[0.15em] font-semibold hover:text-primary transition-colors"
+        >
+          <ArrowLeft size={15} /> Back
+        </button>
+
+        <div>
+          <p className="font-label text-[10px] uppercase tracking-[0.15em] text-primary font-semibold mb-2">
+            ✦ The room
+          </p>
+          <h1 className="font-headline text-5xl font-bold italic leading-[1.05] mb-2">
+            Room {room.roomNumber}
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {eligibilityAnswers
-              ? "Fill in your details and tell us about yourself."
-              : "WOKO housing is reserved for students at eligible Zurich universities. Let's confirm you qualify before you apply."}
+          <p className="font-body text-on-surface-variant">
+            Floor {room.floor} · {room.sizeM2} m²
           </p>
         </div>
 
-        {!eligibilityAnswers ? (
-          <EligibilityQuestionnaire onPass={setEligibilityAnswers} />
-        ) : (
-          <ApplicationForm castingId={castingId!} eligibilityAnswers={eligibilityAnswers} />
+        {room.photo && room.photoMimeType && (
+          <div className="rounded-3xl overflow-hidden outline outline-1 outline-outline/10 shadow-[0_2px_12px_rgba(0,0,0,0.08)]">
+            <img
+              src={`data:${room.photoMimeType};base64,${room.photo}`}
+              alt={`Room ${room.roomNumber}`}
+              className="w-full max-h-[400px] object-cover"
+            />
+          </div>
         )}
-      </main>
-    </div>
-  )
+
+        {room.description && (
+          <div className="rounded-3xl bg-surface-container-low p-6 outline outline-1 outline-outline/15">
+            <p className="font-label text-[10px] uppercase tracking-[0.15em] text-on-surface-variant font-semibold mb-3">
+              ── About this room ──
+            </p>
+            <p className="font-body text-sm text-on-surface leading-relaxed whitespace-pre-line">
+              {room.description}
+            </p>
+          </div>
+        )}
+
+        <button
+          onClick={goToForm}
+          className="flex items-center justify-between w-full px-6 py-5 bg-primary text-on-primary rounded-full font-label text-sm font-bold tracking-widest active:scale-[0.98] transition-transform"
+        >
+          START APPLICATION <ArrowRight size={16} />
+        </button>
+      </div>
+    );
+  }
+
+  return null;
 }

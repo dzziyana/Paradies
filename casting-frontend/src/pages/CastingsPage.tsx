@@ -1,151 +1,154 @@
-import { useEffect, useState } from "react"
-import { useNavigate } from "react-router-dom"
-import { ArrowRight, CalendarBlank, Users, Clock, Archive, Sparkle } from "@phosphor-icons/react"
-import Logo from "@/components/Logo"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { listCastings, type CastingOverview } from "@/api"
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Calendar, Clock, Plus, Settings, Users } from "lucide-react";
+import { getCastings, formatDate, type CastingListItem } from "@/lib/api";
 
-function formatDate(d: string) {
-  return new Date(d).toLocaleDateString("en-CH", { day: "numeric", month: "short", year: "numeric" })
-}
+function CastingCard({ casting }: { casting: CastingListItem }) {
+  const navigate = useNavigate();
 
-function formatDateTime(dt: string) {
-  return new Date(dt).toLocaleString("en-CH", {
-    day: "numeric", month: "short", year: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  })
-}
-
-function isActive(casting: CastingOverview) {
-  return new Date(casting.moveInDate) >= new Date(new Date().toDateString())
-}
-
-function CastingCard({ casting }: { casting: CastingOverview }) {
-  const navigate = useNavigate()
-  const active = isActive(casting)
+  const hasRoom = casting.room !== null;
+  const roomLabel = hasRoom ? `Room ${casting.room!.roomNumber}` : null;
 
   return (
-    <Card className="transition-shadow hover:shadow-md">
-      <CardHeader>
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex flex-col gap-1">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <CalendarBlank className="size-4 text-primary shrink-0" />
-              {formatDate(casting.moveInDate)}{casting.moveOutDate ? ` – ${formatDate(casting.moveOutDate)}` : ""}
-            </CardTitle>
-            {casting.time && (
-              <CardDescription className="flex items-center gap-1.5">
-                <Clock className="size-3.5" />
-                Viewing: {formatDateTime(casting.time)}
-              </CardDescription>
+    <div className="rounded-2xl bg-white outline outline-1 outline-outline/10 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+      {/* Header strip */}
+      <div className="px-5 pt-5 pb-4">
+        <div className="flex items-start justify-between gap-3 mb-2">
+          <div className="min-w-0">
+            <p className="font-headline text-lg font-bold italic tracking-tight text-on-surface truncate pr-1">
+              {casting.replacedPersonName}
+            </p>
+            {roomLabel && (
+              <p className="font-body text-[11px] text-on-surface-variant">{roomLabel}</p>
             )}
           </div>
-          <Badge variant={active ? "default" : "secondary"} className="shrink-0">
-            {active ? "Active" : "Archived"}
-          </Badge>
+          <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+            <span className="bg-primary/12 text-primary px-2 py-0.5 rounded-lg font-label text-[10px] font-bold">
+              {casting.applicationCount}
+            </span>
+            {casting.unevaluatedCount > 0 && (
+              <span className="bg-rose/15 text-rose px-2 py-0.5 rounded-lg font-label text-[10px] font-bold">
+                {casting.unevaluatedCount} new
+              </span>
+            )}
+          </div>
         </div>
-      </CardHeader>
-      <CardContent className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-          <Users className="size-4" />
-          {casting.applicationCount} application{casting.applicationCount !== 1 ? "s" : ""}
+
+        {/* Meta row */}
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-on-surface-variant">
+          <p className="font-body text-xs flex items-center gap-1">
+            <Calendar size={11} className="opacity-50" />
+            {formatDate(casting.moveInDate)}
+          </p>
+          {casting.time && (
+            <p className="font-body text-xs flex items-center gap-1">
+              <Clock size={11} className="opacity-50" />
+              {casting.time.slice(0, 16).replace("T", " ")}
+            </p>
+          )}
+          {casting.applicationUntil && (
+            <p className="font-body text-xs opacity-60">
+              Until {formatDate(casting.applicationUntil)}
+            </p>
+          )}
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => navigate(`/admin/applications?casting=${casting.id}`)}
+      </div>
+
+      {/* Action row */}
+      <div className="border-t border-outline-variant/10 px-4 py-3 flex gap-2">
+        <button
+          onClick={() => navigate(`/admin/applications?castingId=${casting.id}`)}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-primary/8 text-primary font-label text-[10px] font-bold uppercase tracking-widest hover:bg-primary/15 transition-colors active:scale-[0.98]"
         >
-          View applications <ArrowRight className="size-3.5" />
-        </Button>
-      </CardContent>
-    </Card>
-  )
+          <Users size={12} strokeWidth={2.5} />
+          Applications
+        </button>
+        <button
+          onClick={() => navigate(`/admin/castings/${casting.id}/manage`)}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-surface-container text-on-surface-variant font-label text-[10px] font-bold uppercase tracking-widest hover:bg-surface-container-high transition-colors active:scale-[0.98]"
+        >
+          <Settings size={12} strokeWidth={2.5} />
+          Manage
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export default function CastingsPage() {
-  const [castings, setCastings] = useState<CastingOverview[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const navigate = useNavigate()
+  const navigate = useNavigate();
+  const [castings, setCastings] = useState<CastingListItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    listCastings()
+    getCastings()
       .then(setCastings)
-      .catch((err: Error) => setError(err.message))
-  }, [])
+      .catch(() => setCastings([]))
+      .finally(() => setLoading(false));
+  }, []);
 
-  const active   = castings?.filter(isActive)   ?? []
-  const archived = castings?.filter((c) => !isActive(c)) ?? []
+  const active = castings.filter((c) => c.applicationPeriodActive);
+  const archived = castings.filter((c) => !c.applicationPeriodActive);
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
-        <div className="mx-auto flex h-12 max-w-2xl items-center gap-3 px-4">
-          <button onClick={() => navigate("/admin")} className="focus:outline-none">
-            <Logo />
+    <div className="flex flex-col gap-8">
+      {/* Header */}
+      <section>
+        <p className="font-label text-[10px] uppercase tracking-[0.15em] text-primary font-semibold mb-1">
+          All castings
+        </p>
+        <div className="flex items-end justify-between">
+          <h2 className="font-headline text-4xl font-bold italic tracking-tight leading-[1.1]">
+            Castings
+          </h2>
+          <button
+            onClick={() => navigate("/admin/castings/new")}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary text-on-primary font-label text-[10px] font-bold uppercase tracking-widest hover:opacity-90 transition-all active:scale-95 mb-1"
+          >
+            <Plus size={12} strokeWidth={3} /> New
           </button>
-          <span className="text-muted-foreground/40 select-none">/</span>
-          <span className="text-sm text-muted-foreground">All castings</span>
         </div>
-      </header>
+      </section>
 
-      <main className="mx-auto max-w-2xl px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-2xl font-semibold tracking-tight">Castings</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Overview of all active and archived casting periods.
-          </p>
-        </div>
+      {loading ? (
+        <p className="font-body text-sm text-on-surface-variant opacity-60">Loading…</p>
+      ) : (
+        <>
+          {/* Active */}
+          {active.length > 0 && (
+            <section>
+              <p className="font-label text-[10px] uppercase tracking-[0.15em] text-on-surface-variant font-semibold mb-4">
+                Active · {active.length}
+              </p>
+              <div className="space-y-3">
+                {active.map((c) => <CastingCard key={c.id} casting={c} />)}
+              </div>
+            </section>
+          )}
 
-        {error && (
-          <Card className="mb-6 border-destructive/30 bg-destructive/5">
-            <CardContent className="py-3 text-sm text-destructive">{error}</CardContent>
-          </Card>
-        )}
+          {active.length === 0 && (
+            <p className="font-body text-sm text-on-surface-variant opacity-40 text-center py-4">
+              No active castings right now.
+            </p>
+          )}
 
-        {castings === null && !error && (
-          <p className="text-sm text-muted-foreground italic">Loading…</p>
-        )}
-
-        {castings !== null && castings.length === 0 && (
-          <Card>
-            <CardContent className="py-10 text-center text-sm text-muted-foreground italic">
-              No castings found. Create one from the admin panel.
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Active */}
-        {active.length > 0 && (
-          <section className="mb-8">
-            <div className="mb-3 flex items-center gap-2">
-              <Sparkle className="size-4 text-primary" weight="fill" />
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-                Active
-              </h2>
-            </div>
-            <div className="flex flex-col gap-3">
-              {active.map((c) => <CastingCard key={c.id} casting={c} />)}
-            </div>
-          </section>
-        )}
-
-        {/* Archived */}
-        {archived.length > 0 && (
-          <section>
-            <div className="mb-3 flex items-center gap-2">
-              <Archive className="size-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-                Archived
-              </h2>
-            </div>
-            <div className="flex flex-col gap-3">
-              {archived.map((c) => <CastingCard key={c.id} casting={c} />)}
-            </div>
-          </section>
-        )}
-      </main>
+          {/* Archived */}
+          {archived.length > 0 && (
+            <section>
+              <p className="font-label text-[10px] uppercase tracking-[0.15em] text-on-surface-variant font-semibold mb-4">
+                Archived · {archived.length}
+              </p>
+              <div className="space-y-3">
+                {archived.map((c) => (
+                  <div key={c.id} className="opacity-50 hover:opacity-80 transition-opacity">
+                    <CastingCard casting={c} />
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+        </>
+      )}
     </div>
-  )
+  );
 }

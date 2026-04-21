@@ -11,3 +11,30 @@ Thumbs.db
 
 # Nix
 result
+
+# Build output
+casting-frontend/dist/
+casting-frontend/.vite/
+casting-svc/target/
+
+# Python cache
+nlp-svc/__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Node
+casting-frontend/node_modules/
+
+# Claude Code local settings (contain machine-specific permissions)
+**/.claude/settings.local.json
+
+# Screenshots / temp media at repo root
+*.png
+102982-C7F338B6-1D33-41A7-9B59-20BFA218DDEC-0-1525226078-2.gif
+4266.gif
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
